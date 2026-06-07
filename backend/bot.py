@@ -4,6 +4,7 @@ load_dotenv()
 import os
 import asyncio
 import logging
+import httpx
 from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp
 from telegram.ext import Application, CommandHandler, ContextTypes, PreCheckoutQueryHandler, MessageHandler, filters
 
@@ -25,6 +26,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     user = update.effective_user
+
+    # Handle referral: /start ref<USER_ID>
+    ref_id: int | None = None
+    if context.args:
+        arg = context.args[0]
+        if arg.startswith("ref"):
+            try:
+                ref_id = int(arg[3:])
+            except ValueError:
+                pass
+
+    # Register user + referral via API
+    if ref_id:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"{WEBHOOK_URL}/api/referrals/register",
+                    json={"user_id": user.id, "ref_id": ref_id},
+                    timeout=5.0,
+                )
+        except Exception as e:
+            logger.warning("Referral registration failed: %s", e)
+
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "🛍 Відкрити магазин",
@@ -39,40 +63,51 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Approve all pre-checkout queries (Stars payments)."""
     query = update.pre_checkout_query
     if query:
         await query.answer(ok=True)
 
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle successful Stars payment — forward to FastAPI via HTTP."""
     if not update.message or not update.message.successful_payment:
         return
 
     payment = update.message.successful_payment
-    order_id = payment.invoice_payload
+    invoice_payload: str = payment.invoice_payload
+    charge_id: str = payment.telegram_payment_charge_id
 
-    import httpx
-    api_url = os.getenv("WEBHOOK_URL", "")
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{api_url}/api/payments/stars/webhook",
-                json={
-                    "message": {
-                        "successful_payment": {
-                            "invoice_payload": order_id,
-                            "telegram_payment_charge_id": payment.telegram_payment_charge_id,
+    api_base = WEBHOOK_URL
+
+    async with httpx.AsyncClient() as client:
+        if invoice_payload.startswith("sub:"):
+            # Subscription payment
+            try:
+                await client.post(
+                    f"{api_base}/api/subscriptions/webhook/stars",
+                    json={"payload": invoice_payload, "charge_id": charge_id},
+                    timeout=5.0,
+                )
+            except Exception as e:
+                logger.error("Subscription webhook failed: %s", e)
+            await update.message.reply_text("⭐ Підписку активовано! Дякуємо.")
+        else:
+            # Regular order payment
+            try:
+                await client.post(
+                    f"{api_base}/api/payments/stars/webhook",
+                    json={
+                        "message": {
+                            "successful_payment": {
+                                "invoice_payload": invoice_payload,
+                                "telegram_payment_charge_id": charge_id,
+                            }
                         }
-                    }
-                },
-                timeout=5.0,
-            )
-    except Exception as e:
-        logger.error("Failed to notify API about Stars payment: %s", e)
-
-    await update.message.reply_text("✅ Оплату підтверджено! Дякуємо за замовлення.")
+                    },
+                    timeout=5.0,
+                )
+            except Exception as e:
+                logger.error("Order payment webhook failed: %s", e)
+            await update.message.reply_text("✅ Оплату підтверджено! Дякуємо за замовлення.")
 
 
 def build_app() -> Application:
@@ -98,7 +133,6 @@ async def main() -> None:
     if WEBHOOK_URL:
         webhook_url = f"{WEBHOOK_URL}{WEBHOOK_PATH}"
         logger.info("Starting in webhook mode: %s", webhook_url)
-
         await app.initialize()
         await set_menu_button(app)
         await app.bot.set_webhook(
@@ -117,7 +151,7 @@ async def main() -> None:
         logger.info("Bot running via webhook on port 8443")
         await asyncio.Event().wait()
     else:
-        logger.info("Starting in polling mode (no WEBHOOK_URL set)")
+        logger.info("Starting in polling mode")
         async with app:
             await set_menu_button(app)
             await app.run_polling(allowed_updates=Update.ALL_TYPES)

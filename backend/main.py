@@ -1,20 +1,36 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db.database import engine, Base
-from models import models  # noqa: F401 — registers ORM models
+from models import models       # noqa: F401
+from models import pro_models   # noqa: F401
 from routers import products, orders, payments
+from routers import admin, subscriptions, referrals, broadcasts
+from routers.broadcasts import check_scheduled_broadcasts
+
+
+async def _broadcast_cron():
+    """Check for due scheduled broadcasts every 60 seconds."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await check_scheduled_broadcasts()
+        except Exception:
+            pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _seed_products_if_empty()
+    task = asyncio.create_task(_broadcast_cron())
     yield
+    task.cancel()
 
 
 def _seed_products_if_empty():
@@ -38,8 +54,8 @@ def _seed_products_if_empty():
 
 
 app = FastAPI(
-    title="Telegram Mini App API",
-    version="1.0.0",
+    title="Telegram Mini App API (PRO)",
+    version="2.0.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -58,11 +74,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Core
 app.include_router(products.router)
 app.include_router(orders.router)
 app.include_router(payments.router)
 
+# PRO
+app.include_router(admin.router)
+app.include_router(subscriptions.router)
+app.include_router(referrals.router)
+app.include_router(broadcasts.router)
+
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.0.0"}

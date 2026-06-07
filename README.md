@@ -3,6 +3,8 @@
 Production-ready boilerplate for Telegram Mini Apps.  
 **Stack:** Next.js 14 · FastAPI · SQLite · PM2 · Nginx · Monobank + Telegram Stars
 
+> **Branch `pro`** adds: Admin Dashboard · Subscriptions · Referral system · Push broadcasts
+
 ---
 
 ## Quick Start (5 steps)
@@ -195,3 +197,87 @@ bash scripts/ssl.sh yourdomain.com api.yourdomain.com
 | `OWNER_CHAT_ID` | Ваш Telegram ID для сповіщень |
 | `WEBHOOK_SECRET` | Секрет для Telegram webhook |
 | `DATABASE_URL` | SQLAlchemy DB URL |
+| `ADMIN_SECRET` | Секрет для адмін-панелі |
+| `REFERRAL_BONUS` | Бонусних балів за реферала (default: 50) |
+| `BOT_USERNAME` | Username бота без @ |
+
+---
+
+## ⭐ PRO Features (branch `pro`)
+
+```bash
+git checkout pro
+```
+
+### 1. Admin Dashboard — `/admin`
+
+Захищена паролем (`ADMIN_SECRET`) адмін-панель прямо в Mini App:
+
+| Розділ | Можливості |
+|--------|-----------|
+| **Stats** | Користувачі, замовлення, виручка, підписки, черга |
+| **Users** | Перегляд, пошук, блокування |
+| **Orders** | Список всіх замовлень, зміна статусу в один клік |
+| **Broadcasts** | Створення розсилок, відкладена відправка, статистика |
+
+```
+ADMIN_SECRET=your_random_secret  # в backend/.env
+```
+Відкрити: `https://yourdomain.com/admin`
+
+---
+
+### 2. Subscription System
+
+- Плани: **Monthly** (100 ⭐) / **Yearly** (999 ⭐)
+- Оплата Telegram Stars через `openInvoice`
+- Автоматичне продовження при повторній оплаті
+- `useSubscription()` хук — `isSubscribed` прапорець доступний скрізь
+- Сторінка: `/subscription`
+
+**Нові API endpoint-и:**
+```
+GET  /api/subscriptions/status
+POST /api/subscriptions/create-invoice
+POST /api/subscriptions/cancel
+POST /api/subscriptions/webhook/stars
+```
+
+---
+
+### 3. Referral System
+
+- Унікальне посилання: `https://t.me/bot?start=ref<USER_ID>`
+- Відстеження в БД (таблиця `referrals`)
+- Нарахування бонусних балів (`REFERRAL_BONUS` кредитів)
+- Лідерборд топ-10 рефералів
+- Сторінка: `/referral`
+
+**Нові API endpoint-и:**
+```
+GET  /api/referrals/my
+GET  /api/referrals/leaderboard
+POST /api/referrals/award/{referral_id}
+```
+
+---
+
+### 4. Push Notifications / Broadcasts
+
+- `POST /api/admin/broadcast` — миттєва або відкладена розсилка
+- Батчева відправка (25 msg/сек, без перевищення лімітів Telegram)
+- Cron-перевірка кожні 60 сек для запланованих розсилок
+- Статус: `pending → running → done/failed`
+- Підтримка HTML розмітки
+
+---
+
+### Нові таблиці БД
+
+| Таблиця | Призначення |
+|---------|------------|
+| `users` | Telegram-користувачі (upsert при кожній авторизації) |
+| `subscriptions` | Підписки + дата закінчення |
+| `referrals` | Реферальні зв'язки + статус бонусу |
+| `broadcasts` | Розсилки + статистика доставки |
+| `broadcast_recipients` | Лог відправки по кожному користувачу |
