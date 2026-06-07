@@ -7,6 +7,22 @@ Production-ready boilerplate for Telegram Mini Apps.
 
 ---
 
+## 🚀 PRO Version — $49
+
+| Feature | Free | PRO |
+|---------|------|-----|
+| Next.js 14 + FastAPI | ✅ | ✅ |
+| Monobank + Telegram Stars | ✅ | ✅ |
+| PM2 + Nginx deploy scripts | ✅ | ✅ |
+| Admin Dashboard | ❌ | ✅ |
+| Subscription system | ❌ | ✅ |
+| Referral system | ❌ | ✅ |
+| Push notifications | ❌ | ✅ |
+
+**To purchase:** write me on Telegram [@ElvitaStudio](https://t.me/ElvitaStudio)
+
+---
+
 ## Quick Start (5 steps)
 
 ```bash
